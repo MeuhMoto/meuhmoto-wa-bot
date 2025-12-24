@@ -1,45 +1,105 @@
-import express from "express";
-import fetch from "node-fetch";
+const express = require("express");
+const axios = require("axios");
 
 const app = express();
 app.use(express.json());
 
-const TOKEN = process.env.WHATSAPP_TOKEN;
-const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+// ✅ Variáveis de ambiente (você vai configurar no Render)
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN || "meuhmoto_verify";
+const GRAPH_TOKEN = process.env.WHATSAPP_TOKEN; // token do WhatsApp (NÃO coloque aqui no código)
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID; // id do número (vem do WhatsApp Manager / Cloud API)
 
+// ✅ Healthcheck (pra Render)
 app.get("/", (req, res) => {
-  res.send("Bot MeuhMoto rodando 🚀");
+  res.status(200).send("MeuHMoto WA Bot OK ✅");
 });
 
+// ✅ Verificação do Webhook (Meta chama isso)
+app.get("/webhook", (req, res) => {
+  const mode = req.query["hub.mode"];
+  const token = req.query["hub.verify_token"];
+  const challenge = req.query["hub.challenge"];
+
+  if (mode === "subscribe" && token === VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
+  }
+  return res.sendStatus(403);
+});
+
+// ✅ Recebe mensagens do WhatsApp
 app.post("/webhook", async (req, res) => {
-  const entry = req.body.entry?.[0];
-  const change = entry?.changes?.[0];
-  const message = change?.value?.messages?.[0];
+  try {
+    const body = req.body;
 
-  if (message) {
-    const from = message.from;
+    if (body.object) {
+      const entry = body.entry?.[0];
+      const changes = entry?.changes?.[0];
+      const value = changes?.value;
 
-    await fetch(
-      `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${TOKEN}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: from,
-          text: { body: "Olá! 👋 Sou o bot da MeuhMoto. Em breve vamos te atender automaticamente." }
-        })
+      const messages = value?.messages;
+      if (messages && messages.length > 0) {
+        const msg = messages[0];
+        const from = msg.from; // número do cliente
+        const text = msg?.text?.body?.trim() || "";
+
+        // Resposta simples (vamos melhorar depois)
+        let reply = "Olá! Sou o bot da MeuHMoto. 😊\nDigite:\n1) Planos\n2) Documentos\n3) Suporte";
+
+        if (text === "1" || text.toLowerCase().includes("plano")) {
+          reply =
+            "📌 Planos MeuHMoto:\n\nA) Locou, Rodou, Ficou\nB) Locou, Rodou, Lucrou\n\nDigite A ou B.";
+        } else if (text === "a") {
+          reply =
+            "✅ Locou, Rodou, Ficou:\n- Pagamento semanal\n- Sem caução (em alguns casos)\n- Uso ilimitado com raio gratuito (ex: 60km)\n\nQuer simular? Digite: SIMULAR";
+        } else if (text === "b") {
+          reply =
+            "✅ Locou, Rodou, Lucrou:\n- Contrato 6 ou 12 meses\n- Com caução (ex: R$700)\n\nQuer detalhes? Digite: 6 ou 12";
+        } else if (text === "2" || text.toLowerCase().includes("document")) {
+          reply = "📄 Documentos:\n- CNH\n- Comprovante de residência\n- Selfie com documento\n\nQuer falar com um atendente? Digite: HUMANO";
+        } else if (text === "3" || text.toLowerCase().includes("suporte")) {
+          reply = "🛠️ Suporte:\nMe diga seu problema em 1 frase que eu encaminho. 😊";
+        }
+
+        // Envia resposta
+        await sendWhatsAppMessage(from, reply);
       }
-    );
+
+      return res.sendStatus(200);
+    }
+
+    return res.sendStatus(404);
+  } catch (err) {
+    console.error("Webhook error:", err?.response?.data || err.message);
+    return res.sendStatus(500);
+  }
+});
+
+// ✅ Função de envio
+async function sendWhatsAppMessage(to, message) {
+  if (!GRAPH_TOKEN || !PHONE_NUMBER_ID) {
+    console.log("Faltando WHATSAPP_TOKEN ou PHONE_NUMBER_ID nas variáveis de ambiente.");
+    return;
   }
 
-  res.sendStatus(200);
-});
+  const url = `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`;
+
+  await axios.post(
+    url,
+    {
+      messaging_product: "whatsapp",
+      to,
+      type: "text",
+      text: { body: message }
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${GRAPH_TOKEN}`,
+        "Content-Type": "application/json"
+      }
+    }
+  );
+}
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log("Servidor rodando na porta", PORT);
-});
+app.listen(PORT, () => console.log(`Rodando na porta ${PORT}`));
+
