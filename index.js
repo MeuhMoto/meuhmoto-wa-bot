@@ -1,17 +1,19 @@
-// index.js
 const express = require("express");
 const axios = require("axios");
 
 const app = express();
 app.use(express.json());
 
-// ENV
-const VERIFY_TOKEN = process.env.VERIFY_TOKEN; // precisa ser IGUAL ao "Verificar token" no Meta
-const PORT = process.env.PORT || 3000;
+// =========================
+// VARIÁVEIS DE AMBIENTE
+// =========================
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
-// ===================================
-// 1) GET /webhook  (verificação do Meta)
-// ===================================
+// =========================
+// GET — VERIFICAÇÃO WEBHOOK
+// =========================
 app.get("/webhook", (req, res) => {
   const mode = req.query["hub.mode"];
   const token = req.query["hub.verify_token"];
@@ -26,55 +28,63 @@ app.get("/webhook", (req, res) => {
   return res.sendStatus(403);
 });
 
-// ===================================
-// 2) POST /webhook  (recebe mensagens)
-// ===================================
+// =========================
+// POST — RECEBER MENSAGENS
+// =========================
 app.post("/webhook", async (req, res) => {
   try {
-    console.log("📩 Evento recebido:", JSON.stringify(req.body, null, 2));
+    console.log("📩 Evento recebido:");
+    console.log(JSON.stringify(req.body, null, 2));
 
     const entry = req.body.entry?.[0];
-    const change = entry?.changes?.[0];
-    const message = change?.value?.messages?.[0];
+    const changes = entry?.changes?.[0];
+    const message = changes?.value?.messages?.[0];
 
-    // Se não é mensagem (pode ser status, etc), só confirma OK pro Meta
-    if (!message) return res.sendStatus(200);
+    // Se não for mensagem (ex: status), só confirma
+    if (!message) {
+      return res.sendStatus(200);
+    }
 
-    const from = message.from; // telefone do cliente (wa_id)
+    const from = message.from; // telefone do cliente
     const text = message.text?.body || "";
 
-    console.log("📨 Mensagem de:", from, "| Texto:", text);
+    console.log(`📨 Mensagem de ${from}: ${text}`);
 
-    // Envia resposta
+    // =========================
+    // ENVIAR RESPOSTA
+    // =========================
     await axios.post(
-      `https://graph.facebook.com/v20.0/${process.env.PHONE_NUMBER_ID}/messages`,
+      `https://graph.facebook.com/v20.0/${PHONE_NUMBER_ID}/messages`,
       {
         messaging_product: "whatsapp",
         to: from,
         text: {
-          body: "Olá! Sou o bot da MeuhMoto 🚀",
-        },
+          body: "👋 Olá! Sou o bot da MeuhMoto 🚀\nEm breve vamos te atender automaticamente."
+        }
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.WHATSAPP_TOKEN}`,
-          "Content-Type": "application/json",
-        },
+          Authorization: `Bearer ${WHATSAPP_TOKEN}`,
+          "Content-Type": "application/json"
+        }
       }
     );
 
     console.log("✅ Resposta enviada com sucesso");
-    return res.sendStatus(200);
+    res.sendStatus(200);
+
   } catch (error) {
-    console.error("❌ Erro ao processar mensagem:", error.response?.data || error.message);
-    // IMPORTANTE: sempre 200 pro Meta não ficar reenviando em loop
-    return res.sendStatus(200);
+    console.error("❌ Erro ao processar mensagem:");
+    console.error(error.response?.data || error.message);
+    res.sendStatus(200);
   }
 });
 
-// ===================================
-// START
-// ===================================
-app.listen(PORT, () => {
+// =========================
+// START SERVER — RENDER OK
+// =========================
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Bot rodando na porta ${PORT}`);
 });
